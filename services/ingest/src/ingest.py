@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
-from time import mktime
+from calendar import timegm
 
 import feedparser
 import pandas as pd
@@ -23,7 +23,9 @@ def clean_journalist(raw, source_name):
     """Normalise l'auteur issu du flux (author / dc:creator). Null si absent ou si c'est le nom du média."""
     if not raw:
         return None
-    norm = lambda s: re.sub(r"[\W_]+", "", s).lower()
+    def norm(s):
+        return re.sub(r"[\W_]+", "", s).lower()
+
     names = []
     for n in re.split(r"[,;]", raw):
         n = re.sub(r"\s+", " ", n.strip(" \t\"'«».")).strip()
@@ -40,7 +42,7 @@ def fetch(feed, day):
         ts = e.get("published_parsed") or e.get("updated_parsed")
         if not ts:
             continue
-        dt = datetime.fromtimestamp(mktime(ts), tz=timezone.utc)
+        dt = datetime.fromtimestamp(timegm(ts), tz=timezone.utc)  # struct_time feedparser = UTC
         if dt.date() != day:
             continue
         rows.append({
