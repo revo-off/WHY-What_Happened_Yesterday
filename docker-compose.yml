@@ -21,7 +21,7 @@ services:
     build: ./services/ingest
     profiles: ["jobs"]
     environment:
-      FEEDS_FILE: /config/feeds.yml
+      FEEDS_FILE: /config/sources.yml
       OUT_DIR: /data/bronze
       SOURCES: ${SOURCES-lemonde}  # POC : Le Monde seul ; SOURCES= (vide) pour toutes
     volumes:
