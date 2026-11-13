@@ -1,0 +1,102 @@
+name: why
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+
+  # Python/pandas : job à la demande (Cronicle ou `docker compose run --rm ingest`)
+  ingest:
+    build: ./services/ingest
+    profiles: ["jobs"]
+    environment:
+      FEEDS_FILE: /config/feeds.yml
+      OUT_DIR: /data/bronze
+      SOURCES: ${SOURCES-lemonde}  # POC : Le Monde seul ; SOURCES= (vide) pour toutes
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
+
+  api:
+    build: ./services/api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports: ["9090:9090"]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus, postgres]
+
+  cronicle:
+    image: soulteary/cronicle:latest  # image communautaire (pas d'image officielle) : à épingler
+    restart: unless-stopped
+    hostname: cronicle
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - cronicledata:/opt/cronicle/data
+      - cronicle_logs:/opt/cronicle/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # pour lancer `docker compose run ingest`
+      - ./:/workspace
+    ports: ["3012:3012"]
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    restart: unless-stopped
+    volumes:
+      - kumadata:/app/data
+    ports: ["3001:3001"]
+
+volumes:
+  pgdata:
+  promdata:
+  grafanadata:
+  cronicledata:
+  cronicle_logs:
+  kumadata:
