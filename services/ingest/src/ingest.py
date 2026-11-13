@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +90,7 @@ def to_utc(parsed_time: Any) -> datetime | None:
     """Convert a feedparser time tuple (already UTC) to an aware datetime."""
     if parsed_time is None:
         return None
-    return datetime(*parsed_time[:6], tzinfo=timezone.utc)
+    return datetime(*parsed_time[:6], tzinfo=UTC)
 
 
 def parse_published_at(entry: Any) -> datetime | None:
@@ -183,9 +183,7 @@ def main() -> None:
     feeds = load_feeds(feeds_file)
     for feed in selected_feeds(feeds, sources):
         articles = fetch_articles(feed, target_date)
-        destination = write_articles(
-            articles, output_dir, str(feed["id"]), target_date
-        )
+        destination = write_articles(articles, output_dir, str(feed["id"]), target_date)
         print(f"{feed['id']}: {len(articles)} articles -> {destination}")
 
 

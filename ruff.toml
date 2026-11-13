@@ -1,0 +1,9 @@
+# Lint partagé par tous les services (exécuté par la CI : ruff check + ruff format --check)
+target-version = "py312"
+line-length = 88
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[lint.isort]
+known-first-party = ["main", "src"]
