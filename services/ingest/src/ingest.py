@@ -1,193 +1,81 @@
-"""Download RSS feeds and write the previous day's articles to Parquet."""
+"""Extrait les articles de la veille depuis les flux RSS -> Parquet brut (couche bronze).
 
-from __future__ import annotations
-
+Un fichier par source et par jour : bronze/source=<id>/date=<YYYY-MM-DD>/articles.parquet
+Colonnes : source, title, excerpt, link, date, journalist (null si absent du flux, pas de scraping).
+"""
 import os
+import re
+import sys
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any
+from time import mktime
 
 import feedparser
 import pandas as pd
 import requests
 import yaml
 
-DEFAULT_FEEDS_FILE = Path("/config/sources.yml")
-DEFAULT_OUT_DIR = Path("/data/bronze")
-USER_AGENT = "WHY-What-Happened-Yesterday/1.0"
-REQUEST_TIMEOUT = 30
+FEEDS = os.getenv("FEEDS_FILE", "/config/sources.yml")
+OUT = os.getenv("OUT_DIR", "/data/bronze")
+UA = "Mozilla/5.0 (compatible; WHY-bot/0.1)"
 
 
-def load_feeds(path: Path) -> dict[str, dict[str, Any]]:
-    """Load configured RSS feeds, indexed by their stable source id."""
-    with path.open(encoding="utf-8") as file:
-        config = yaml.safe_load(file) or {}
-
-    feeds = config.get("feeds", [])
-    if not isinstance(feeds, list):
-        raise ValueError(f"Expected a list of feeds in {path}")
-
-    result: dict[str, dict[str, Any]] = {}
-    for feed in feeds:
-        if not isinstance(feed, dict) or not feed.get("id") or not feed.get("url"):
-            continue
-        result[str(feed["id"])] = feed
-    return result
-
-
-def selected_feeds(
-    feeds: dict[str, dict[str, Any]], sources: str | None
-) -> list[dict[str, Any]]:
-    """Select feeds from SOURCES; an empty value means every configured feed."""
-    if not sources:
-        return list(feeds.values())
-
-    selected: list[dict[str, Any]] = []
-    for source_id in (value.strip() for value in sources.split(",")):
-        if not source_id:
-            continue
-        if source_id not in feeds:
-            raise ValueError(f"Unknown RSS source: {source_id}")
-        selected.append(feeds[source_id])
-    return selected
-
-
-def parse_journalist(entry: Any) -> str:
-    """Return the credit from <author>, else media:credit."""
-    author = str(entry.get("author", "")).strip()
-    if author:
-        return author
-
-    credit = entry.get("media_credit", "")
-    if isinstance(credit, list):
-        credit = credit[0] if credit else ""
-    if isinstance(credit, dict):
-        credit = credit.get("content", "")
-    return str(credit).strip()
-
-
-def parse_image_caption(entry: Any) -> str:
-    """Return media:description, which feedparser exposes as entry.content."""
-    content = entry.get("content", "")
-    if isinstance(content, list):
-        content = content[0] if content else ""
-    if isinstance(content, dict):
-        content = content.get("value", "")
-    return str(content).strip()
-
-
-def parse_image_url(entry: Any) -> str:
-    """Return the media:content image url."""
-    media = entry.get("media_content", "")
-    if isinstance(media, list):
-        media = media[0] if media else ""
-    if isinstance(media, dict):
-        media = media.get("url", "")
-    return str(media).strip()
-
-
-def to_utc(parsed_time: Any) -> datetime | None:
-    """Convert a feedparser time tuple (already UTC) to an aware datetime."""
-    if parsed_time is None:
+def clean_journalist(raw, source_name):
+    """Normalise l'auteur issu du flux (author / dc:creator). Null si absent ou si c'est le nom du média."""
+    if not raw:
         return None
-    return datetime(*parsed_time[:6], tzinfo=timezone.utc)
+    norm = lambda s: re.sub(r"[\W_]+", "", s).lower()
+    names = []
+    for n in re.split(r"[,;]", raw):
+        n = re.sub(r"\s+", " ", n.strip(" \t\"'«».")).strip()
+        if n and norm(n) != norm(source_name) and n not in names:
+            names.append(n)
+    return ", ".join(names) or None
 
 
-def parse_published_at(entry: Any) -> datetime | None:
-    """Return the reference date: <updated> when present, else <pubDate>.
-
-    feedparser aliases updated_parsed to published_parsed when the feed has no
-    <updated> tag, so preferring it degrades to <pubDate> on its own.
-    """
-    return to_utc(entry.get("updated_parsed") or entry.get("published_parsed"))
-
-
-def fetch_articles(feed: dict[str, Any], target_date: date) -> list[dict[str, Any]]:
-    """Fetch one RSS feed and keep entries published on target_date."""
-    response = requests.get(
-        str(feed["url"]),
-        headers={"User-Agent": USER_AGENT},
-        timeout=REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
-    parsed_feed = feedparser.parse(response.content)
-    if parsed_feed.bozo and not parsed_feed.entries:
-        raise ValueError(f"Invalid RSS response from {feed['url']}")
-
-    articles: list[dict[str, Any]] = []
-    for entry in parsed_feed.entries:
-        reference_at = parse_published_at(entry)
-        if reference_at is None or reference_at.date() != target_date:
+def fetch(feed, day):
+    r = requests.get(feed["url"], headers={"User-Agent": UA}, timeout=20)
+    r.raise_for_status()
+    rows = []
+    for e in feedparser.parse(r.content).entries:
+        ts = e.get("published_parsed") or e.get("updated_parsed")
+        if not ts:
             continue
-
-        pub_date = to_utc(entry.get("published_parsed"))
-        updated_at = to_utc(entry.get("updated_parsed"))
-        image_caption = parse_image_caption(entry)
-        excerpt = str(entry.get("summary", "")).strip()
-        articles.append(
-            {
-                "source": str(feed["id"]),
-                "title": str(entry.get("title", "")).strip(),
-                "excerpt": excerpt or image_caption,
-                "image_caption": image_caption,
-                "image_url": parse_image_url(entry),
-                "link": str(entry.get("link", "")).strip(),
-                "date": reference_at.date().isoformat(),
-                "published_at": reference_at.isoformat(),
-                "pub_date": pub_date.isoformat() if pub_date else "",
-                "updated_at": updated_at.isoformat() if updated_at else "",
-                "journalist": parse_journalist(entry),
-            }
-        )
-    return articles
+        dt = datetime.fromtimestamp(mktime(ts), tz=timezone.utc)
+        if dt.date() != day:
+            continue
+        rows.append({
+            "source": feed["name"],
+            "title": e.get("title"),
+            "excerpt": e.get("summary"),
+            "link": e.get("link"),
+            "date": dt.isoformat(),
+            "journalist": clean_journalist(e.get("author"), feed["name"]),
+        })
+    return rows
 
 
-def write_articles(
-    articles: list[dict[str, Any]],
-    output_dir: Path,
-    source_id: str,
-    target_date: date,
-) -> Path:
-    """Write articles to the documented bronze partition."""
-    destination = (
-        output_dir
-        / f"source={source_id}"
-        / f"date={target_date.isoformat()}"
-        / "articles.parquet"
-    )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    columns = [
-        "source",
-        "title",
-        "excerpt",
-        "image_caption",
-        "image_url",
-        "link",
-        "date",
-        "published_at",
-        "pub_date",
-        "updated_at",
-        "journalist",
-    ]
-    pd.DataFrame(articles, columns=columns).to_parquet(destination, index=False)
-    return destination
-
-
-def main() -> None:
-    """Run ingestion for the configured sources."""
-    feeds_file = Path(os.getenv("FEEDS_FILE", str(DEFAULT_FEEDS_FILE)))
-    output_dir = Path(os.getenv("OUT_DIR", str(DEFAULT_OUT_DIR)))
-    sources = os.getenv("SOURCES", "lemonde")
-    target_date = date.today() - timedelta(days=1)
-
-    feeds = load_feeds(feeds_file)
-    for feed in selected_feeds(feeds, sources):
-        articles = fetch_articles(feed, target_date)
-        destination = write_articles(
-            articles, output_dir, str(feed["id"]), target_date
-        )
-        print(f"{feed['id']}: {len(articles)} articles -> {destination}")
+def main(day=None):
+    day = day or date.today() - timedelta(days=1)
+    with open(FEEDS, encoding="utf-8") as fh:
+        feeds = [f for f in yaml.safe_load(fh)["feeds"] if f.get("url")]
+    only = [s for s in os.getenv("SOURCES", "").split(",") if s]  # ex: SOURCES=lemonde
+    if only:
+        feeds = [f for f in feeds if f["id"] in only]
+    total = 0
+    for f in feeds:
+        try:
+            rows = fetch(f, day)
+        except Exception as ex:
+            print(f"[WARN] {f['id']}: {ex}", file=sys.stderr)
+            continue
+        if not rows:
+            continue
+        d = f"{OUT}/source={f['id']}/date={day}"
+        os.makedirs(d, exist_ok=True)
+        pd.DataFrame(rows).to_parquet(f"{d}/articles.parquet", index=False)
+        total += len(rows)
+    print(f"{total} articles ({day}) -> {OUT}")
 
 
 if __name__ == "__main__":
-    main()
+    main(date.fromisoformat(sys.argv[1]) if len(sys.argv) > 1 else None)

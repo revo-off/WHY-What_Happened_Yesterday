@@ -7,7 +7,7 @@ feeds:
   - {id: humanite, name: "L'Humanité", scope: national, bias: extreme-gauche, status: ok, url: "https://www.humanite.fr/feed"}
   - {id: mediapart, name: Mediapart, scope: national, bias: extreme-gauche, status: ok, url: "https://www.mediapart.fr/articles/feed"}
   - {id: lejdd, name: Le JDD, scope: national, bias: extreme-droite, status: ok, url: "https://www.lejdd.fr/rss.xml"}
-  - {id: valeursactuelles, name: Valeurs Actuelles, scope: national, bias: extreme-droite, status: blocked, url: "https://www.valeursactuelles.com/feed "}  # 429
+
   - {id: ouestfrance, name: Ouest-France, scope: regional, region: ouest, status: ok, url: "https://www.ouest-france.fr/rss/une"}
   - {id: sudouest, name: Sud Ouest, scope: regional, region: sud-ouest, status: ok, url: "https://www.sudouest.fr/rss.xml"}
   - {id: leparisien, name: Le Parisien, scope: regional, region: paris, status: ok, url: "https://feeds.leparisien.fr/leparisien/rss"}
@@ -16,9 +16,10 @@ feeds:
   - {id: union-aisne, name: L'Union Aisne, scope: regional, region: nord-est, status: ok, url: "https://www.lunion.fr/rss/120/cible_principale"}
   - {id: union-ardennes, name: L'Union Ardennes, scope: regional, region: nord-est, status: ok, url: "https://www.lunion.fr/rss2/181/cible_principale"}
   - {id: lnc, name: Les Nouvelles Calédoniennes, scope: regional, region: nouvelle-caledonie, status: ok, url: "https://www.lnc.nc/rss.xml"}
+  # - {id: valeursactuelles, name: Valeurs Actuelles, scope: national, bias: extreme-droite, status: blocked, url: "https://www.valeursactuelles.com/feed "}
   # - {id: lejdc, name: Journal du Centre, scope: regional, region: centre, status: missing, url: null}
   # - {id: laprovence, name: La Provence, scope: regional, region: sud, status: missing, url: null}
-  # - {id: lavoixdunord, name: La Voix du Nord, scope: regional, region: nord, status: blocked, url: "https://www.lavoixdunord.fr/rss"}  # 403
+  # - {id: lavoixdunord, name: La Voix du Nord, scope: regional, region: nord, status: blocked, url: "https://www.lavoixdunord.fr/rss"}
   # - {id: lequotidien, name: Le Quotidien, scope: regional, region: reunion, status: missing, url: null}  # /feed -> 410
   #   France-Antilles / France-Guyane: les flux sont listés sur /pages/fil-rss-<territoire> (connexion abonné requise)
   # - {id: fa_guadeloupe, name: France-Antilles Guadeloupe, scope: regional, region: antilles, status: missing, url: null}
