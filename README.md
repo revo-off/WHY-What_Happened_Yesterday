@@ -16,4 +16,4 @@ docker compose run --rm ingest    # veille -> data/bronze/source=<id>/date=<YYYY
 | Cronicle | http://localhost:3012 (admin/admin, à changer) |
 | Uptime Kuma | http://localhost:3001 |
 
-Sources et état des flux : [config/feeds.yml](config/feeds.yml).
+Sources et état des flux : [config/sources.yml](config/sources.yml).
