@@ -99,7 +99,8 @@ jobs:
 
       - name: Summary
         if: env.PUSH == 'true'
-        run: echo "Publié : \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Publié : \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   # Point d'entrée unique pour la protection de branche : exiger le check « CI OK ».
   ci-ok:
